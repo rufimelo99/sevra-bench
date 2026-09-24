@@ -9,23 +9,36 @@ OUT = ROOT / "visualizations"
 
 NAMES = {"claude-opus-4-7": "Opus 4.7", "gpt-5.5": "GPT-5.5", "glm-5": "GLM-5", "haiku": "Haiku 4.5",
          "gpt-5.4-nano": "GPT-5.4-nano", "grok": "Grok Code Fast", "DeepSeek": "DeepSeek", "kimi": "Kimi K2.5"}
-CWE_NAME = {"cwe79": "CWE-79 (XSS)", "cwe89": "CWE-89 (SQL injection)", "cwe352": "CWE-352 (CSRF)",
-            "cwe862": "CWE-862 (missing authorization)", "cwe787": "CWE-787 (out-of-bounds write)",
-            "cwe22": "CWE-22 (path traversal)", "cwe416": "CWE-416 (use-after-free)",
-            "cwe125": "CWE-125 (out-of-bounds read)", "cwe78": "CWE-78 (OS command injection)",
-            "cwe94": "CWE-94 (code injection)"}
-C = "#1F77B4"
+model_order = ['Opus 4.7', 'GPT-5.5', 'GLM-5', 'DeepSeek', 'Haiku 4.5', 'Kimi K2.5', 'Grok Code Fast',
+               'GPT-5.4-nano'][::-1]
+CWE_DISPLAY = {
+    'cwe79': 'CWE-79\n Cross-Site Scripting',
+    'cwe89': 'CWE-89\n SQL Injection',
+    'cwe352': 'CWE-352\n Cross-Site Request Forgery',
+    'cwe862': 'CWE-862\n Missing Authorization',
+    'cwe787': 'CWE-787\n Out-of-bounds Write',
+    'cwe22': 'CWE-22\n Path Traversal',
+    'cwe416': 'CWE-416\n Use After Free',
+    'cwe125': 'CWE-125\n Out-of-bounds Read',
+    'cwe78': 'CWE-78\n OS Command Injection',
+    'cwe94': 'CWE-94\n Code Injection',
+}
+C_FDR = '#D62728'
 
 
-def wilson_ci(p_pct, n, z=1.645):
+def _wilson_ci(p_pct, n, z=1.645):
+    if n == 0 or p_pct != p_pct:
+        return (0, 0)
     p = p_pct / 100
-    d = 1 + z**2 / n
-    c = (p + z**2 / (2 * n)) / d
-    m = z * ((p * (1 - p) / n + z**2 / (4 * n**2)) ** 0.5) / d
-    return (max(0, p_pct - max(0, c - m) * 100), max(0, min(1, c + m) * 100 - p_pct))
+    denom = 1 + z**2 / n
+    centre = (p + z**2 / (2*n)) / denom
+    margin = z * ((p*(1-p)/n + z**2/(4*n**2))**0.5) / denom
+    lo = max(0, centre - margin) * 100
+    hi = min(1, centre + margin) * 100
+    return (max(0, p_pct - lo), max(0, hi - p_pct))
 
 
-by_model, by_cwe = {}, {}
+counts = {}
 for f in sorted(glob.glob(str(EVAL_DIR / "*.eval"))):
     name = next(n for k, n in NAMES.items() if k in Path(f).name)
     cwe = re.search(r"_(cwe\d+)\.eval", f).group(1)
@@ -33,45 +46,43 @@ for f in sorted(glob.glob(str(EVAL_DIR / "*.eval"))):
     for member in z.namelist():
         if member.startswith("samples/") and member.endswith(".json"):
             sc = next(iter((json.loads(z.read(member)).get("scores") or {}).values()), {})
-            declined = int(sc.get("value") == 0.0)
-            for d, k in ((by_model, name), (by_cwe, cwe)):
-                c = d.setdefault(k, [0, 0])
-                c[0] += 1
-                c[1] += declined
+            c = counts.setdefault((name, cwe), [0, 0])
+            c[0] += 1
+            c[1] += int(sc.get("value") == 0.0)
 
+fig, axes = plt.subplots(2, 5, figsize=(28, 10), sharex=True, gridspec_kw={'wspace': 0.06, 'hspace': 0.25})
+axes = axes.flatten()
+y = np.arange(len(model_order))
+h = 0.6
 
-def rows(d, label):
-    return sorted(((label(k), 100 * dec / n, n) for k, (n, dec) in d.items()), key=lambda r: r[1])
-
-
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 7.4), gridspec_kw={"wspace": 0.55, "width_ratios": [10, 12]})
-for ax, R, title in ((ax1, rows(by_model, lambda k: k), "(a) By review agent"),
-                     (ax2, rows(by_cwe, lambda k: CWE_NAME[k]), "(b) By vulnerability class")):
-    y = np.arange(len(R))
-    vals = [r[1] for r in R]
-    ci = np.array([wilson_ci(r[1], r[2]) for r in R]).T
-    ax.barh(y, vals, 0.65, xerr=ci, color=C, edgecolor="black", linewidth=0.8, zorder=3, capsize=3,
+for ax_i, cwe in enumerate(CWE_DISPLAY):
+    ax = axes[ax_i]
+    n = [counts[(m, cwe)][0] for m in model_order]
+    fdr = [100 * counts[(m, cwe)][1] / counts[(m, cwe)][0] for m in model_order]
+    ci = np.array([_wilson_ci(v, k) for v, k in zip(fdr, n)]).T
+    ax.barh(y, fdr, h, xerr=ci, color=C_FDR, edgecolor="black", linewidth=0.8, zorder=3, capsize=3,
             error_kw={"linewidth": 1.2, "capthick": 1.2})
-    for yi, v, up in zip(y, vals, ci[1]):
-        ax.text(v + up + 1.0, yi, f"{v:.0f}", va="center", fontsize=14, fontweight="bold")
-    ax.set_yticks(y)
-    ax.set_yticklabels([r[0] for r in R], fontsize=15, fontweight="bold")
-    ax.set_xlim(0, 50)
+    ax.set_title(CWE_DISPLAY[cwe], fontsize=22, fontweight="bold")
     ax.grid(True, axis="x", alpha=0.3, zorder=0)
-    ax.set_facecolor("white")
-    ax.spines["left"].set_linewidth(2.0)
-    ax.spines["bottom"].set_linewidth(2.0)
-    ax.spines["left"].set_color("black")
-    ax.spines["bottom"].set_color("black")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.tick_params(width=1.5, length=5, labelsize=17)
-    for l in ax.get_xticklabels():
-        l.set_fontweight("bold")
-    ax.set_xlabel("False-Decline Rate (%)", fontsize=18, fontweight="bold")
-    ax.set_title(title, fontsize=22, fontweight="bold")
+    ax.spines["left"].set_linewidth(2.0); ax.spines["bottom"].set_linewidth(2.0)
+    ax.spines["left"].set_color("black"); ax.spines["bottom"].set_color("black")
+    ax.tick_params(width=1.5, length=5, labelsize=18)
+    ax.set_yticks(y)
+    ax.set_xlim(-5, 110)
+    ax.set_xticks([0, 50, 100])
+    if ax_i % 5 == 0:
+        ax.set_yticklabels(model_order, fontsize=18)
+        ax.tick_params(axis="y", labelleft=True)
+        for lbl in ax.get_yticklabels():
+            lbl.set_fontweight("bold")
+    else:
+        ax.set_yticklabels([])
+    for lbl in ax.get_xticklabels():
+        lbl.set_fontweight("bold")
+    if ax_i >= 5:
+        ax.set_xlabel("False-Decline Rate (%)", fontsize=20, fontweight="bold")
 
+plt.tight_layout()
 plt.savefig(OUT / "24_benign_false_decline_rate.png", dpi=300, bbox_inches="tight", facecolor="white")
 plt.savefig(OUT / "24_benign_false_decline_rate.pdf", bbox_inches="tight", facecolor="white")
-for label, d in (("model", by_model), ("cwe", by_cwe)):
-    print(label, {k: f"{100*v[1]/v[0]:.1f}% (n={v[0]})" for k, v in d.items()})
+print("cells:", len(counts), "n per cell:", sorted({v[0] for v in counts.values()}))
