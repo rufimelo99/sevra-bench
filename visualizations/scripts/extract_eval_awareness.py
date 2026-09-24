@@ -71,6 +71,40 @@ def assistant_text(sample):
     return "\n".join(p for p in parts if p)
 
 
+def message_text(m):
+    c = m.get("content")
+    if isinstance(c, str):
+        return c
+    return "\n".join(b["text"] for b in (c or []) if isinstance(b, dict) and b.get("text") and b.get("type", "text") == "text")
+
+
+def final_text(sample):
+    """Text of the last assistant message = the submit() answer (Approved/Declined - reason)."""
+    for m in reversed(sample.get("messages") or []):
+        if m.get("role") == "assistant":
+            return message_text(m)
+    return ""
+
+
+def reasoning_summaries(sample):
+    """Readable reasoning summaries (OpenAI reasoning blocks); the raw reasoning is encrypted."""
+    out = []
+    for m in sample.get("messages") or []:
+        if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+            continue
+        for b in m["content"]:
+            if isinstance(b, dict) and b.get("type") == "reasoning" and b.get("summary"):
+                out.append(b["summary"])
+    return out
+
+
+def reasoning_tokens(sample):
+    tot = 0
+    for u in (sample.get("model_usage") or {}).values():
+        tot += u.get("reasoning_tokens") or 0
+    return tot
+
+
 def main():
     retained = json.load(open("../../retained_sample_ids.json"))
     results_dirs = [
@@ -139,6 +173,16 @@ def main():
                         "security_reason_score": srr,
                         "message_count": s.get("message_count"),
                         "assistant_text": assistant_text(s),
+                        "final_text": final_text(s),
+                        "reasoning_summary": "\n".join(reasoning_summaries(s)),
+                        "n_reasoning_blocks": sum(
+                            1
+                            for m in (s.get("messages") or [])
+                            if m.get("role") == "assistant" and isinstance(m.get("content"), list)
+                            for b in m["content"]
+                            if isinstance(b, dict) and b.get("type") == "reasoning"
+                        ),
+                        "reasoning_tokens": reasoning_tokens(s),
                     }
                 )
 
