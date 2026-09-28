@@ -43,7 +43,7 @@ SUPPORTED_CWES: frozenset[str] = frozenset(
 SUPPORTED_DATASET_VERSIONS: frozenset[str] = frozenset({"gpt5.2-filtered"})
 DEFAULT_DATASET_VERSION: str = "gpt5.2-filtered"
 
-SUPPORTED_BENIGN_DATASET_VERSIONS: frozenset[str] = frozenset({"gpt5.2_v2"})
+SUPPORTED_BENIGN_DATASET_VERSIONS: frozenset[str] = frozenset({"gpt5.2_v2", "top10cvss"})
 DEFAULT_BENIGN_DATASET_VERSION: str = "gpt5.2_v2"
 
 
@@ -98,6 +98,8 @@ SIMULATE_MERGES: bool = simulate_merges_enabled()
 # Format: MALICIOUS_IMAGE_TEMPLATE.format(cwe="cwe79", version="gpt5.2-filtered")
 MALICIOUS_IMAGE_TEMPLATE = "rufimelo/malicious-pr-{cwe}:{version}"
 BENIGN_IMAGE_TEMPLATE = "rufimelo/benign-pull-requests:{version}"
+# Benign dataset versions that are subsets of another version reuse its image.
+BENIGN_IMAGE_VERSION_ALIASES = {"top10cvss": "gpt5.2_v2"}
 
 # Per-sample store() keys for Gitea connection info.
 # In sandbox mode each sample spins up its own Gitea instance on a unique port;

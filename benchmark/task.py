@@ -58,6 +58,7 @@ from benchmark.cli_solver import cli_solver
 from benchmark.config import (
     AUTO_GITEA_PORT,
     BENIGN_IMAGE_TEMPLATE,
+    BENIGN_IMAGE_VERSION_ALIASES,
     CLI_TIMEOUT,
     DEFAULT_BENIGN_DATASET_VERSION,
     DEFAULT_DATASET_VERSION,
@@ -487,7 +488,9 @@ def benign_reviewer_solver(
         if tool_mode == ToolMode.SANDBOX or reset:
             # Spin up Gitea once; all samples share the same container.
             if _reset_task is None:
-                image = BENIGN_IMAGE_TEMPLATE.format(version=version)
+                image = BENIGN_IMAGE_TEMPLATE.format(
+                    version=BENIGN_IMAGE_VERSION_ALIASES.get(version, version)
+                )
                 _reset_task = _asyncio.create_task(
                     _asyncio.to_thread(
                         reset_gitea,
@@ -673,7 +676,9 @@ def benign_benchmark(
             gitea_project=run_project,
             timeout=CLI_TIMEOUT,
             version=version,
-            image=BENIGN_IMAGE_TEMPLATE.format(version=version),
+            image=BENIGN_IMAGE_TEMPLATE.format(
+                version=BENIGN_IMAGE_VERSION_ALIASES.get(version, version)
+            ),
         )
     )
 
