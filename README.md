@@ -1,8 +1,8 @@
 # Sevra-Bench: Social Engineering of Vulnerabilities in Review Agents
 
 [![Paper](https://img.shields.io/badge/arXiv-2606.13757-b31b1b)](https://arxiv.org/abs/2606.13757)
-[![Project page](https://img.shields.io/badge/project-page-2563eb)](https://rufimelo99.github.io/malicious-pr-bench/)
-[![Traces](https://img.shields.io/badge/review-traces-2563eb)](https://rufimelo99.github.io/malicious-pr-bench/traces/)
+[![Project page](https://img.shields.io/badge/project-page-2563eb)](https://rufimelo99.github.io/sevra-bench/)
+[![Traces](https://img.shields.io/badge/review-traces-2563eb)](https://rufimelo99.github.io/sevra-bench/traces/)
 [![Dataset](https://img.shields.io/badge/%F0%9F%A4%97-RedAI4Code%2FSEVRA-yellow)](https://huggingface.co/datasets/RedAI4Code/SEVRA)
 
 **Accepted at [FLMSec 2026](https://flmsec.github.io/) (Foundations of Language Model Security), a NeurIPS 2026 workshop in Paris, France.** 
@@ -38,11 +38,11 @@ Overall Refusal Rate on the retained challenge split (1,062 PRs), plain review p
 | Grok Code Fast | 39 | 18 |
 | GPT-5.4-nano | 36 | 37 |
 
-Per-CWE and per-framing breakdowns, the false-decline analysis and example trajectories are in the [paper](https://arxiv.org/abs/2606.13757) and on the [project page](https://rufimelo99.github.io/malicious-pr-bench/).
+Per-CWE and per-framing breakdowns, the false-decline analysis and example trajectories are in the [paper](https://arxiv.org/abs/2606.13757) and on the [project page](https://rufimelo99.github.io/sevra-bench/).
 
 ## Explore the trajectories
 
-The [trace explorer](https://rufimelo99.github.io/malicious-pr-bench/traces/) is a static browser for a curated subset of the evaluation logs: the PR as the reviewer saw it, every model's verdict side by side, and the full reasoning and tool calls behind each one. To rebuild it from your own logs:
+The [trace explorer](https://rufimelo99.github.io/sevra-bench/traces/) is a static browser for a curated subset of the evaluation logs: the PR as the reviewer saw it, every model's verdict side by side, and the full reasoning and tool calls behind each one. To rebuild it from your own logs:
 
 ```bash
 python3 docs/tools/export_traces.py --per-cwe 12 --seed 0   # writes docs/traces/data
