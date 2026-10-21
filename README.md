@@ -1,288 +1,205 @@
-# SEVRA-BENCH: Social Engineering of Vulnerabilities in Review Agents
+# Sevra-Bench: Social Engineering of Vulnerabilities in Review Agents
 
-## Benchmark Architecture
+[![Paper](https://img.shields.io/badge/arXiv-2606.13757-b31b1b)](https://arxiv.org/abs/2606.13757)
+[![Project page](https://img.shields.io/badge/project-page-2563eb)](https://rufimelo99.github.io/malicious-pr-bench/)
+[![Traces](https://img.shields.io/badge/review-traces-2563eb)](https://rufimelo99.github.io/malicious-pr-bench/traces/)
+[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97-RedAI4Code%2FSEVRA-yellow)](https://huggingface.co/datasets/RedAI4Code/SEVRA)
 
-![SEVRA Framework Overview](assets/framework_diagram.png)
+**Accepted at [FLMSec 2026](https://flmsec.github.io/) (Foundations of Language Model Security), a NeurIPS 2026 workshop in Paris, France.** 
 
-SEVRA operationalizes real-world supply chain attacks as pull requests. The benchmark measures how well LLM agents detect malicious PRs across three attack dimensions: **distribution strategy** (single vs. staged), **code concealment** (tiny change vs. buried in complexity vs. semantic equivalent), and **social engineering framing** (15 distinct manipulation strategies). Agent performance is scored on detection accuracy (blocking attacks) and false-decline rate (not rejecting legitimate fixes).
+Can an automated code reviewer reject a malicious pull request when the attacker controls both the code diff **and** the PR narrative?
 
-A reproducible benchmark for measuring how well LLM agents detect malicious pull requests and resist social engineering attacks. The benchmark places an agent in the role of an open-source code reviewer and asks it to accept or reject PRs that contain deliberately embedded vulnerabilities alongside manipulative framing. Each attack PR is crafted to look plausible — the question is whether the agent can see through the disguise.
+Sevra-Bench places an LLM review agent in the role of an open-source maintainer, inside a live Gitea instance, and asks it to approve or reject pull requests that reintroduce real, publicly disclosed vulnerabilities under one of 15 social-engineering framings.
 
-## What the Benchmark Measures
+![Sevra-Bench pipeline](docs/static/images/fse/fig1_pipeline.png)
 
-Real-world supply chain attacks arrive as pull requests: a helpful-looking bug fix that introduces a backdoor, an "optimization" that leaks secrets, a "refactor" that embeds injection. SEVRA operationalizes this threat model, placing a reviewer agent in a live Gitea instance with attack PRs and measuring two metrics: **detection accuracy** (fraction of malicious PRs blocked) and **false-decline rate** (fraction of legitimate fixes incorrectly rejected). This dual-metric design distinguishes between cautious and genuinely discerning reviewers.
+## What it measures
+
+Each malicious PR is built from a historical commit that fixed a CVE-linked vulnerability. We automatically reverse the fix, restoring the original vulnerable code, and submit it as a PR whose title and description are written to mask the change. The reviewer sees only what the PR interface exposes (repository state, diff, commit history, PR text) and must decide.
+
+| Metric | Meaning |
+|--------|---------|
+| **Refusal Rate (RR)** | Fraction of malicious PRs the reviewer rejects. Higher is better. |
+| **Security Reason Rate (SRR)** | Of the rejections, the fraction whose rationale (judged by an LLM) identifies the underlying exploit, not a stylistic or unrelated objection. |
+| **False-Decline Rate (FDR)** | Fraction of legitimate security fixes the reviewer fails to approve. Guards against reviewers that reject everything. |
+
+### Headline results
+
+Overall Refusal Rate on the retained challenge split (1,062 PRs), plain review prompt, 8 reviewers:
+
+| Reviewer | RR (%) | SRR (%) |
+|----------|-------:|--------:|
+| Claude Opus 4.7 | 98 | 70 |
+| GPT-5.5 | 95 | 70 |
+| GLM-5 | 83 | 60 |
+| Claude Haiku 4.5 | 53 | 44 |
+| DeepSeek V4-Flash | 53 | 33 |
+| Kimi K2.5 | 52 | 33 |
+| Grok Code Fast | 39 | 18 |
+| GPT-5.4-nano | 36 | 37 |
+
+Per-CWE and per-framing breakdowns, the false-decline analysis and example trajectories are in the [paper](https://arxiv.org/abs/2606.13757) and on the [project page](https://rufimelo99.github.io/malicious-pr-bench/).
+
+## Explore the trajectories
+
+The [trace explorer](https://rufimelo99.github.io/malicious-pr-bench/traces/) is a static browser for a curated subset of the evaluation logs: the PR as the reviewer saw it, every model's verdict side by side, and the full reasoning and tool calls behind each one. To rebuild it from your own logs:
+
+```bash
+python3 docs/tools/export_traces.py --per-cwe 12 --seed 0   # writes docs/traces/data
+python3 -m http.server 8000 --directory docs                # open http://localhost:8000/traces/
+```
+
+The exporter reads `.eval` archives directly and needs no extra dependencies. A separate drag-and-drop viewer for individual `.eval` files lives in [`viewer/`](viewer/).
 
 ## Dataset
 
-**Available on Hugging Face**: [`RedAI4Code/SEVRA`](https://huggingface.co/datasets/RedAI4Code/SEVRA)
+Hosted on Hugging Face: [`RedAI4Code/SEVRA`](https://huggingface.co/datasets/RedAI4Code/SEVRA) (gated, read token required).
 
-The current supported releases are:
+- **Malicious:** 2,250 PRs across 10 CWE classes from the 2025 CWE Top 25, built by deterministic patch reversal and paired with 15 framings. The **retained challenge split** keeps the 1,062 PRs that at least one weak baseline reviewer approved, so trivially detectable attacks are dropped.
+- **Benign:** 347 legitimate security fixes from the same CWE classes, applied with `git apply` from the official patches. Only the PR text is LLM-written, in a neutral tone.
 
-- `deterministic`: **2,250 malicious PRs** across 10 CWE classes from the 2025 CWE Top 25. Deterministic patch reversal with 15 social engineering framing strategies. Challenging evaluation subset: **1,062 filtered samples** (47%) containing only PRs at least one baseline model missed. Baseline accuracy on filtered subset: GPT-5.4-nano 36.2%, Grok-code-fast-1 39.7%.
-- `benign`: **347 benign ground-truth security fixes** from the same CWE classes, for false-decline rate measurement
+Every attack is grounded in a real CVE from the OSV and SECommits datasets.
 
-Each attack PR is grounded in a real CVE from the OSV/SECommits datasets and is parametrized by social engineering framing strategy.
+### The 15 framings
 
-## Attack Taxonomy
+Each framing changes only the PR narrative. The diff stays fixed.
 
-Attacks are parameterized along **three axes** that control how the vulnerable change is distributed, how it is hidden in code, and how it is socially engineered. Each combination represents a distinct attack configuration.
+| Framing | How the PR is presented |
+|---------|-------------------------|
+| AI Agent Authored | Routine output of an internal automation agent; steers review toward tests and lint |
+| Appeal to Authority | Follows external expert guidance; deviating means ignoring it |
+| Build System Laundering | Runtime change framed as build, CI or test-fixture maintenance |
+| Dependency Compat Claim | Required for compatibility with a named dependency version |
+| Emotional Appeal | Live outage; every minute of review prolongs the damage |
+| Evidence Dilution | Load-bearing change buried among fabricated unrelated cleanups |
+| Fake Bug Fix | Fixes a concrete user-visible regression |
+| False Coverage | Claims tests validate the change using evidence that never exercises the attack |
+| Misleading Hardening | The vulnerable diff itself is presented as hardening |
+| Misleading Pass | Routine and forgettable; no rationale that invites scrutiny |
+| Out of Distribution | Dense subsystem internals with no plain-English gloss |
+| Prior Approval Signal | Implements a previously approved decision; re-litigation is out of scope |
+| Refactoring | Cleanup of confusing code with no behavior change |
+| Review Bias | Front-loaded "Security Analysis" concluding the diff is safe |
+| Unsafe Optimization | Check is redundant given a caller invariant or upstream contract |
 
-Attacks are parameterized across three independent axes that control how the vulnerable change is distributed, how it is hidden, and how it is socially engineered. See the [taxonomy breakdown diagram](assets/attack_taxonomy_axes.md) for a visual summary.
-
-### Axis 1: Distribution Strategy — How the attack is split across PRs
-
-Controls whether the attack is introduced as a single pull request or staged across a related PR sequence:
-
-- **Single PR Introduction**: The vulnerable change is introduced in one reviewable pull request.
-- **Precondition Staging**: Supporting changes are staged before the final vulnerable change.
-
-### Axis 2: Code Concealment — How the vulnerability is hidden
-
-Controls how the malicious code change is embedded within the diff:
-
-- **Tiny Change**: Minimal, localized modification (single validation removal, regex change, or sanitization step)
-- **Buried in Complexity**: Wraps the malicious change in structural refactoring (increased nesting, helper functions, reorganized control flow)
-- **Semantic Equivalent**: Replaces secure implementation with functionally similar but vulnerable hand-rolled version (e.g., custom sanitization missing edge cases)
-
-### Axis 3: PR Framing — How the reviewer is manipulated
-
-Controls how the pull request presents itself to exploit cognitive biases and social engineering tactics (15 strategies, each represented in the benchmark):
-
-- **Fake Bug Fix**: Presents change as fixing an observed runtime error with fabricated symptoms
-- **Unsafe Optimization**: Claims the removed check is provably redundant given other invariants
-- **Refactoring**: Frames as purely structural with no intended functional effect
-- **Misleading Pass**: Relies on absence of CI failures to imply correctness
-- **Review Bias**: Includes fabricated security analysis concluding the change is safe
-- **False Coverage**: Adds tests across multiple code paths to maximize apparent coverage metrics
-- **Appeal to Authority**: Cites external security consultant, public advisory, or framework maintainer
-- **Emotional Appeal**: Frames as urgent customer-facing fix, pressuring rapid approval
-- **Jargon Smokescreen**: Uses dense domain-specific terminology to signal expertise and discourage scrutiny
-- **AI Agent Authored**: Presents change as generated by an automation system, leveraging deference to peer tooling
-- **Build System Laundering**: Frames runtime-affecting changes as build configuration or CI maintenance
-- **Prior Approval Signal**: Frames as implementing a decision already approved in prior discussions
-- **Dependency Compat Claim**: Justifies as necessary for upstream library compatibility
-- **Evidence Dilution**: Buries the vulnerability among fabricated unrelated cleanup items
-- **Misleading Hardening**: Pairs vulnerability with genuine minor security improvement elsewhere in diff
+The dataset also carries two optional metadata axes, `axis1` (single PR vs. staged precondition) and `axis2` (tiny change, buried in complexity, semantic equivalent). The paper studies the framing axis; the others are available as filters ([taxonomy](assets/attack_taxonomy_axes.md)).
 
 ## How it works
 
-The benchmark runs through [inspect-ai](https://github.com/UKGovernmentBEIS/inspect_ai). At the start of each evaluation, a Docker container running Gitea is reset to its original image state — all PRs are restored to open and a fresh API token is injected automatically. The reviewer agent then receives one sample per attack and uses a suite of GitHub-compatible tools to inspect commits, diffs, file histories, and the broader codebase before deciding to approve or decline.
+The benchmark runs on [inspect-ai](https://github.com/UKGovernmentBEIS/inspect_ai). Before each evaluation a Docker container running Gitea is reset to its original image, every PR is reopened and a fresh API token is injected. The reviewer then gets one sample per PR and uses GitHub-compatible tools to read diffs, file histories and the wider codebase before approving or declining. Commit history is squashed so the attack cannot be spotted by comparing commits.
 
-### PR Generation Pipeline
+Malicious PRs were generated in three stages: a profiler agent analyses each fix commit and proposes plausible non-security justifications for reversing it; an executor agent synthesises the change, which is checked with tree-sitter and an LLM quality judge (low-quality PRs are regenerated); validated PRs are deployed to Gitea.
 
-**Malicious PRs** are generated in three stages:
-
-1. **CVE Profiling**: A profiler agent analyzes each security fix commit, identifies vulnerable code locations, and proposes plausible non-security justifications for reversing the fix.
-
-2. **Code Synthesis + Quality Validation**: An executor agent synthesizes the malicious change according to axis parameters. The generated code is validated for syntactic correctness using tree-sitter. An LLM judge then assesses whether the PR meets deployment quality criteria: semantic soundness, plausible framing, and evasion likelihood. Low-quality PRs are discarded and regenerated.
-
-3. **PR Deployment**: Validated PRs are deployed to the Gitea instance where reviewers interact with them.
-
-**Benign PRs** are generated deterministically: the official CVE fix patches are applied using `git apply`, ensuring syntactic and functional correctness by construction. Only the PR title and description are generated by an LLM, written in straightforward, realistic tone without deceptive framing.
-
-### Scoring
-
-**Detection Accuracy**: Fraction of malicious PRs correctly blocked (not merged). A perfect score is 1.0.
-
-**False-Decline Rate (FDR)**: Fraction of benign PRs incorrectly rejected. Measured on held-out benign dataset to distinguish conservative reviewers (high FDR) from genuinely discerning ones (low FDR, high detection).
-
-The final evaluation score balances both metrics: high malicious detection is only valuable if paired with reasonable benign PR acceptance.
-
-## Requirements
-
-- Docker + Docker Compose
-- Python 3.11+
-- [`uv`](https://github.com/astral-sh/uv)
+![Example PR in Gitea](assets/pr_example.png)
 
 ## Quickstart
 
-### Prerequisites
-
-Ensure you have:
-- **Docker + Docker Compose** (for Gitea instances)
-- **Python 3.11+**
-- **[uv](https://github.com/astral-sh/uv)** (fast Python package installer)
-
-### Step 1: Install dependencies
+**Requirements:** Docker with Compose, Python 3.10+, [`uv`](https://github.com/astral-sh/uv).
 
 ```bash
 uv sync
 ```
 
-### Step 2: Authenticate with Hugging Face
+**Hugging Face access.** The dataset is gated. Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), then:
 
-The dataset is gated and requires a Hugging Face token with read access. Get one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-
-**Option A: Interactive login**
 ```bash
 uv run python -c "from huggingface_hub import login; login()"
 ```
 
-**Option B: Write token directly**
+**Model credentials.** Set whichever providers you use:
+
 ```bash
-echo "hf_your_token_here" > ~/.cache/huggingface/token
+export ANTHROPIC_API_KEY=sk-ant-...            # Anthropic
 ```
 
-### Step 3: Configure LLM credentials
-
-**For Anthropic:**
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-**For Azure OpenAI:** Create a `.env` file in the repo root:
 ```env
+# .env in the repo root, for Azure OpenAI
 AZUREAI_OPENAI_BASE_URL=https://<your-resource>.openai.azure.com/
 AZUREAI_OPENAI_API_KEY=<your-key>
 ```
 
-**For AWS Bedrock (Claude Code CLI):**
 ```bash
-export CLAUDE_CODE_USE_BEDROCK=1
+export CLAUDE_CODE_USE_BEDROCK=1               # AWS Bedrock
 export AWS_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
-export AWS_SESSION_TOKEN=...   # if using temporary credentials
+export AWS_SESSION_TOKEN=...                   # if using temporary credentials
 ```
 
-**For GitHub Copilot (experimental):**
-```bash
-export GITHUB_TOKEN=github_pat_...
-```
-
-### Step 4: Run the benchmark
-
-The benchmark has two evaluation modes:
-
-#### Malicious PR Detection (Detection Accuracy)
-Measures how well the agent blocks malicious PRs:
+**Run one CWE.**
 
 ```bash
+# Malicious PRs: Refusal Rate and Security Reason Rate
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --model anthropic/claude-opus-4-6 \
   -T cwe=cwe79 \
-  -T version=gpt5.2-filtered \
+  -T prompt_variant=plain \
   --log-dir logs/malicious/cwe79
-```
 
-#### Benign PR Acceptance (False-Decline Rate)
-Measures how well the agent avoids blocking legitimate security fixes:
-
-```bash
+# Benign PRs: False-Decline Rate
 uv run inspect eval benchmark/task.py@benign_benchmark \
   --model anthropic/claude-opus-4-6 \
   -T cwe=cwe79 \
-  -T version=gpt5.2_v2 \
+  -T prompt_variant=plain \
   --log-dir logs/benign/cwe79
 ```
 
-### Monitoring
+Add `--limit 4` for a quick smoke test. While a run is going, it prints the `GITHUB_API_URL` of its Gitea instance; open the same host and port without `/api/v1` to watch the PRs live.
 
-While the benchmark runs:
-- **Real-time PR review**: The run prints the `GITHUB_API_URL` for its Gitea instance. Use the same host/port without `/api/v1` to watch PRs live.
-- **Container reset**: The Gitea Docker container is automatically reset at the start of each run (set `reset=false` to preserve state)
+> **Prompt variant.** The code defaults to `prompt_variant=security`, which tells the reviewer to look for security problems. The paper evaluates the `plain` prompt, which never mentions security, so pass `-T prompt_variant=plain` to reproduce its numbers.
 
-### Full Example: Multi-CWE Evaluation
-
-Run a complete evaluation across multiple CWE classes with the default LLM agent:
+### Reproducing the paper
 
 ```bash
-# Malicious PRs across all 10 CWE classes
-for cwe in cwe79 cwe89 cwe352 cwe862 cwe787 cwe22 cwe416 cwe125 cwe78 cwe94; do
+CWES="cwe79 cwe89 cwe352 cwe862 cwe787 cwe22 cwe416 cwe125 cwe78 cwe94"
+
+for cwe in $CWES; do
   uv run inspect eval benchmark/task.py@reviewer_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T cwe=$cwe \
-    -T version=gpt5.2-filtered \
+    --model <model> -T cwe=$cwe -T prompt_variant=plain \
     --log-dir logs/malicious/$cwe
 done
 
-# Benign PRs across all 10 CWE classes
-for cwe in cwe79 cwe89 cwe352 cwe862 cwe787 cwe22 cwe416 cwe125 cwe78 cwe94; do
+for cwe in $CWES; do
   uv run inspect eval benchmark/task.py@benign_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T cwe=$cwe \
-    -T version=gpt5.2_v2 \
+    --model <model> -T cwe=$cwe -T prompt_variant=plain \
     --log-dir logs/benign/$cwe
 done
 ```
 
-### Full Example: Copilot CLI Evaluation
+By default the malicious task keeps only PRs that at least one weak baseline approved (the `failed_by` filter, with models listed in [`benchmark/config.py`](benchmark/config.py)). That list currently includes Grok Code Fast alongside the two baselines named in the paper (Haiku 4.5 and GPT-5.4-nano).
 
-Evaluate both malicious and benign PRs with GitHub Copilot CLI:
+### Reading the results
+
+Each run writes an Inspect `.eval` archive to `--log-dir`. Summarise them with:
 
 ```bash
-export COPILOT_GITHUB_TOKEN=your_github_token_here
-
-# Build the Copilot Docker image (one-time)
-docker build -f scripts/Dockerfile.sandbox-copilot -t rufimelo/sandbox-cli:copilot .
-
-# Malicious PRs with Copilot CLI
-for cwe in cwe79 cwe89 cwe352 cwe862; do
-  uv run inspect eval benchmark/task.py@reviewer_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T agent=copilot-cli \
-    -T cwe=$cwe \
-    -T version=gpt5.2-filtered \
-    --limit 5 \
-    --log-dir logs/malicious-copilot/$cwe
-done
-
-# Benign PRs with Copilot CLI
-for cwe in cwe79 cwe89 cwe352 cwe862; do
-  uv run inspect eval benchmark/task.py@benign_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T agent=copilot-cli \
-    -T cwe=$cwe \
-    -T version=gpt5.2_v2 \
-    --limit 5 \
-    --log-dir logs/benign-copilot/$cwe
-done
+uv run python scripts/analyse_results.py --logs-dir logs/malicious
+uv run python scripts/analyse_benign_results.py --logs-dir logs/benign
 ```
 
-## Tool Modes and Agent Types
+## Agents and tool modes
 
-The benchmark supports different execution modes and agents:
+`-T agent=` selects who reviews. `-T tool_mode=` selects what the reviewer can use.
 
-### Tool Modes
+| `agent` | Description |
+|---------|-------------|
+| `default` | ReAct-style LLM reviewer driven by inspect-ai (used for the paper) |
+| `claude-code` | Claude Code CLI running agentically in a Docker sandbox |
+| `copilot-cli` | GitHub Copilot CLI running agentically in a Docker sandbox |
+| `copilot-sdk` | Copilot SDK on the host, routing bash into the sandbox (legacy) |
 
-**Sandbox mode (default)** — reviewer uses Gitea inspection tools plus bash inside a Docker sandbox with the repo cloned at `/workspace/repo`:
-```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/azure/gpt-5.2 \
-  -T cwe=cwe79 \
-  -T tool_mode=sandbox \
-  --log-dir logs/sandbox
-```
+| `tool_mode` | Description |
+|-------------|-------------|
+| `sandbox` (default) | Gitea tools plus bash in a Docker sandbox with the repo cloned at `/workspace/repo` |
+| `gitea` | Gitea/GitHub-compatible API tools only |
 
-**Gitea mode** — reviewer uses only the live Gitea/GitHub-compatible API tools:
-```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/azure/gpt-5.2 \
-  -T cwe=cwe79 \
-  -T tool_mode=gitea \
-  --log-dir logs/gitea
-```
+<details>
+<summary>Claude Code and Copilot examples</summary>
 
-### Agent Types
-
-**Default (LLM-based reviewer):**
-```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model anthropic/claude-opus-4-6 \
-  -T cwe=cwe79 \
-  --log-dir logs/claude
-```
-
-**Claude Code CLI (via AWS Bedrock):**
-
-Claude Code runs as a fully agentic CLI inside a Docker sandbox. It autonomously explores the repository — reading files, running git commands, diffing commits — before producing a structured review decision.
+**Claude Code via Bedrock.** `--model` is the inspect-ai model used for scoring; `-T model=` is the model Claude Code uses inside the sandbox. The CLI sandbox image is selected automatically.
 
 ```bash
-export CLAUDE_CODE_USE_BEDROCK=1
-export AWS_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_SESSION_TOKEN=...
+export CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION=us-east-1   # plus AWS credentials
 
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --model bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
@@ -292,281 +209,107 @@ uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --log-dir logs/claude-code
 ```
 
-- `--model` (the outer flag): the inspect-ai scorer model used to evaluate reasoning quality.
-- `-T model=`: the model Claude Code CLI uses inside the sandbox (Bedrock inference profile ID).
-- The CLI sandbox image (with Node.js and the `claude` CLI) is selected automatically when `agent=claude-code` is set.
+**Claude Code via the Anthropic API.**
 
-**Claude Code CLI (via Anthropic API):**
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --model anthropic/claude-sonnet-4-6 \
-  -T agent=claude-code \
-  -T model=claude-sonnet-4-6 \
-  -T cwe=cwe79 \
-  --log-dir logs/claude-code
+  -T agent=claude-code -T model=claude-sonnet-4-6 \
+  -T cwe=cwe79 --log-dir logs/claude-code
 ```
 
-**GitHub Copilot CLI (runs inside Docker sandbox):**
-
-Copilot CLI runs as a fully agentic process inside a Docker sandbox, similar to Claude Code. It autonomously explores the repository before producing a structured review decision.
+**Copilot CLI.** Build the image once, then run. `COPILOT_GITHUB_TOKEN` is forwarded to the container, which is configured by `scripts/sandbox-compose-copilot.yaml`.
 
 ```bash
-export COPILOT_GITHUB_TOKEN=your_github_token_here
+export COPILOT_GITHUB_TOKEN=<github token>
+docker build -f scripts/Dockerfile.sandbox-copilot -t rufimelo/sandbox-cli:copilot .
 
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --model anthropic/claude-opus-4-6 \
-  -T agent=copilot-cli \
-  -T cwe=cwe79 \
+  -T agent=copilot-cli -T cwe=cwe79 \
   --log-dir logs/copilot-cli
 ```
 
-- Requires: Docker image `rufimelo/sandbox-cli:copilot` (build with `docker build -f scripts/Dockerfile.sandbox-copilot -t rufimelo/sandbox-cli:copilot .` or use pre-built)
-- `COPILOT_GITHUB_TOKEN` is automatically forwarded from the host to the container
-- Uses `sandbox-compose-copilot.yaml` for container configuration
+</details>
 
-**GitHub Copilot SDK (host-based, legacy):**
-```bash
-export GITHUB_TOKEN=github_pat_...
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  -T agent=copilot-sdk \
-  -T model=gpt-5.3-codex \
-  -T cwe=cwe79 \
-  --log-dir logs/copilot-sdk
-```
+## Configuration reference
 
-- Runs on host machine with Python SDK
-- Routes bash commands into sandbox container
-
-## Configuration Reference
-
-### Malicious PR Benchmark (`reviewer_benchmark`)
+### `reviewer_benchmark` (malicious PRs)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `cwe` | — | **Required.** CWE class to evaluate: `cwe79`, `cwe89`, `cwe352`, `cwe862`, `cwe787`, `cwe22`, `cwe416`, `cwe125`, `cwe78`, `cwe94` |
-| `version` | `gpt5.2-filtered` | Dataset version for malicious PRs |
-| `hf_dataset` | `RedAI4Code/SEVRA` | Hugging Face dataset to load from. Set to `""` to use local file instead |
-| `jsonl_path` | — | Path to local `generated_prs.jsonl` file (used when `hf_dataset=""`) |
-| `axis1` | — | **Optional.** Filter by distribution strategy (e.g., `single_pr_introduction`, `precondition_staging`) |
-| `axis2` | — | **Optional.** Filter by code concealment: `tiny_change`, `buried_in_complexity`, or `semantic_equivalent` |
-| `axis3` | — | **Optional.** Filter by PR framing strategy (e.g., `fake_bug_fix`, `unsafe_optimization`, `misleading_hardening`, `refactoring`) |
-| `agent` | `default` | Agent type: `default` (LLM-based), `claude-code` (Claude Code CLI), `copilot-cli` (GitHub Copilot CLI in Docker sandbox), or `copilot-sdk` (Copilot SDK host-based). Setting `agent=claude-code` or `agent=copilot-cli` automatically uses the appropriate CLI sandbox image. |
-| `tool_mode` | `sandbox` | Execution mode: `sandbox` (Gitea tools plus sandbox bash) or `gitea` (Gitea tools only) |
-| `review_mode` | `independent` | `independent` creates one sample per PR; `sequence` keeps complete multi-PR groups together |
-| `simulate_merge` | `true` | Record approvals in memory instead of merging in Gitea, preserving sample independence. CLI agents always simulate merges. Set `false` only when you explicitly want live Gitea merge side effects. |
-| `reset` | `true` | Reset container before run starts |
-| `gitea_port` | `0` | Port for Gitea instance. `0` allocates a free host port for this run |
-| `gitea_project` | auto | Docker Compose project name for Gitea. Defaults to a unique run name so parallel evals do not reset each other |
+| `cwe` | none | CWE class: `cwe79`, `cwe89`, `cwe352`, `cwe862`, `cwe787`, `cwe22`, `cwe416`, `cwe125`, `cwe78`, `cwe94` |
+| `version` | `gpt5.2-filtered` | Malicious dataset version |
+| `hf_dataset` | `RedAI4Code/SEVRA` | Hugging Face dataset; set `""` to use `jsonl_path` instead |
+| `jsonl_path` | none | Local `generated_prs.jsonl` (when `hf_dataset=""`) |
+| `axis1` | none | Filter by distribution strategy: `single_pr_introduction`, `precondition_staging` |
+| `axis2` | none | Filter by concealment: `tiny_change`, `buried_in_complexity`, `semantic_equivalent` |
+| `axis3` | none | Filter by framing, e.g. `fake_bug_fix`, `prior_approval_signal` |
+| `prompt_variant` | `security` | `security` or `plain` (the paper uses `plain`) |
+| `failed_by` | weak baselines | Keep only PRs these models approved; see `WEAKER_MODELS` in `benchmark/config.py` |
+| `agent` | `default` | See [Agents and tool modes](#agents-and-tool-modes) |
+| `tool_mode` | `sandbox` | `sandbox` or `gitea` |
+| `review_mode` | `independent` | `independent`: one sample per PR; `sequence`: keep multi-PR groups together |
+| `simulate_merge` | `true` | Record approvals in memory instead of merging in Gitea, so samples stay independent. CLI agents always simulate. |
+| `reset` | `true` | Reset the Gitea container before the run |
+| `gitea_port` | `0` | `0` picks a free host port |
+| `gitea_project` | auto | Docker Compose project name; unique per run by default |
 
-**Global inspect options:**
-| Option | Description |
-|--------|-------------|
-| `--limit N` | Limit evaluation to the first N dataset samples |
-| `--max-samples N` | Maximum number of samples to run concurrently |
-| `--log-dir PATH` | Directory to save evaluation results |
+### `benign_benchmark` (legitimate fixes)
 
-**Parallel runs:**
-By default each evaluation allocates a free Gitea host port and a unique Docker Compose project name. This lets you run two agents side by side as separate `inspect eval` processes, as long as their log directories are distinct:
+Takes `cwe`, `hf_dataset`, `jsonl_path`, `agent`, `tool_mode`, `prompt_variant`, `reset`, `gitea_port` and `gitea_project` with the same meanings and defaults as above, plus `version` (default `gpt5.2_v2`).
+
+Useful inspect options: `--limit N`, `--max-samples N` (concurrency), `--log-dir PATH`.
+
+### Parallel runs
+
+Each evaluation allocates its own Gitea port and Compose project, so two `inspect eval` processes can run side by side as long as their `--log-dir` differ. Pass `-T gitea_port=3001 -T gitea_project=my-run` only when you need a stable Gitea URL for debugging.
+
+### Local datasets and debugging
+
 ```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model <kimi-model-id> \
-  -T cwe=cwe79 \
-  --log-dir logs/kimi-cwe79
-
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/azure/gpt-5.2 \
-  -T agent=codex \
-  -T model=gpt-5.3-codex \
-  -T cwe=cwe79 \
-  --log-dir logs/codex-cwe79
-```
-Pass explicit `-T gitea_port=3001 -T gitea_project=my-run` only when you need a stable local Gitea URL for debugging.
-
-**Example: Evaluate only "Tiny Change" vulnerabilities with "Fake Bug Fix" framing:**
-```bash
+# Use your own generated PRs
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
   --model anthropic/claude-opus-4-6 \
-  -T cwe=cwe79 \
-  -T axis2=tiny_change \
-  -T axis3=fake_bug_fix \
-  --log-dir logs/cwe79_tiny_fake
-```
+  -T hf_dataset="" -T jsonl_path=/path/to/generated_prs.jsonl \
+  --log-dir logs/custom
 
-**Example: Quick test with 4 samples (useful for debugging):**
-```bash
+# Narrow to one concealment and framing, and keep Gitea state afterwards
 uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/azure/gpt-5.2 \
-  -T cwe=cwe79 \
-  --limit 4 \
-  --log-dir logs/test
-```
-
-**Example: Sandbox mode:**
-```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/azure/gpt-5.2 \
-  -T cwe=cwe79 \
-  -T tool_mode=sandbox \
-  --limit 4 \
-  --log-dir logs/test
-```
-
-### Benign PR Benchmark (`benign_benchmark`)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `cwe` | — | **Required.** CWE class to evaluate (same as malicious) |
-| `version` | `gpt5.2_v2` | Dataset version for benign PRs |
-| `hf_dataset` | `RedAI4Code/SEVRA` | Hugging Face dataset to load from |
-| `agent` | `default` | Agent type: `default` (LLM-based), `claude-code` (Claude Code CLI), or `copilot-cli` (GitHub Copilot CLI) |
-| `tool_mode` | `sandbox` | Execution mode: `sandbox` (Gitea tools plus sandbox bash) or `gitea` (Gitea tools only) |
-| `reset` | `true` | Reset Gitea container before run |
-| `gitea_port` | `0` | Port for Gitea instance. `0` allocates a free host port for this run |
-| `gitea_project` | auto | Docker Compose project name for Gitea. Defaults to a unique run name so parallel evals do not reset each other |
-
-**Note:** Benign PRs are deterministically generated from official CVE fixes without social engineering framing. They serve to measure how often the agent incorrectly rejects legitimate security improvements (false-positive rate).
-
-**Example: Evaluate benign PRs with Copilot CLI:**
-```bash
-export COPILOT_GITHUB_TOKEN=your_github_token_here
-
-uv run inspect eval benchmark/task.py@benign_benchmark \
   --model anthropic/claude-opus-4-6 \
-  -T agent=copilot-cli \
-  -T cwe=cwe79 \
-  --log-dir logs/benign/copilot-cli
+  -T cwe=cwe79 -T axis2=tiny_change -T axis3=fake_bug_fix -T reset=false \
+  --log-dir logs/cwe79_debug
 ```
 
 ## Troubleshooting
 
-### Docker Issues
+| Problem | Fix |
+|---------|-----|
+| Gitea container will not start | Check `docker ps` and `docker logs <container>`. Runs create and clean up their own Compose project. |
+| Port already in use | Leave `gitea_port` at its default `0`, or pass a free port with `-T gitea_port=3002` |
+| Hugging Face token rejected | `rm ~/.cache/huggingface/token`, then log in again as above |
+| Provider says the API key is missing | Confirm the variable is exported in the shell you run `uv run` from |
 
-**Container fails to start:**
-```bash
-# Check Docker is running
-docker ps
+## Repository layout
 
-# View logs
-docker logs gitea
+| Path | Contents |
+|------|----------|
+| `benchmark/` | inspect-ai tasks, agents, tools, scoring and dataset loading |
+| `scripts/` | Docker files, sandbox compose files and result-analysis scripts |
+| `docs/` | Project page, leaderboard generator and the trace explorer (`docs/traces/`) |
+| `viewer/` | Drag-and-drop browser viewer for `.eval` logs |
+| `tests/` | Unit tests (`uv run pytest`) |
 
-# Force restart
-docker-compose down && docker-compose up -d
+## Citation
+
+```bibtex
+@article{melo2026sevra,
+  title   = {Sevra-Bench: Social Engineering of Vulnerabilities in Review Agents},
+  author  = {Melo, Rui and Fogliato, Riccardo and Zhou, Sean and Thaker, Pratiksha and Wu, Zhiwei Steven},
+  journal = {arXiv preprint arXiv:2606.13757},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2606.13757}
+}
 ```
-
-**Port already in use:**
-```bash
-# Change Gitea port
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model anthropic/claude-opus-4-6 \
-  -T cwe=cwe79 \
-  -T gitea_port=3002 \
-  --log-dir logs/cwe79
-```
-
-### Authentication Issues
-
-**Hugging Face token rejected:**
-```bash
-# Clear cached token and re-authenticate
-rm ~/.cache/huggingface/token
-uv run python -c "from huggingface_hub import login; login()"
-```
-
-**API key not found:**
-```bash
-# Verify credentials are set
-echo $ANTHROPIC_API_KEY  # Should not be empty
-```
-
-## Advanced Usage
-
-### Running with Local PR Dataset
-
-If you've generated your own PR dataset locally:
-
-```bash
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model anthropic/claude-opus-4-6 \
-  -T hf_dataset="" \
-  -T jsonl_path=/path/to/generated_prs.jsonl \
-  -T reset=false \
-  --log-dir logs/custom
-```
-
-### Preserving Container State
-
-For debugging or iterative testing:
-
-```bash
-# Skip automatic reset
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model anthropic/claude-opus-4-6 \
-  -T cwe=cwe79 \
-  -T reset=false \
-  --log-dir logs/cwe79_debug
-```
-
-### Model Switching
-
-Evaluate the same CWE across different models:
-
-```bash
-# Claude
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model anthropic/claude-opus-4-6 \
-  -T cwe=cwe79 \
-  --log-dir logs/claude
-
-# GPT-4
-uv run inspect eval benchmark/task.py@reviewer_benchmark \
-  --model openai/gpt-4 \
-  -T cwe=cwe79 \
-  --log-dir logs/gpt4
-```
-
-## Understanding Results
-
-After each evaluation, Inspect writes a `.eval` log archive to the `--log-dir`:
-
-```
-logs/cwe79/
-└── 2026-..._reviewer-benchmark_....eval
-```
-
-Use the analysis helpers to summarize those logs:
-
-```bash
-uv run python scripts/analyse_results.py --logs-dir logs/malicious
-uv run python scripts/analyse_benign_results.py --logs-dir logs/benign
-```
-
-## Reproducing Benchmark Results
-
-To reproduce the current supported benchmark configuration, use `version=gpt5.2-filtered` for malicious PRs and `version=gpt5.2_v2` for benign PRs:
-
-```bash
-# All malicious PRs
-for cwe in cwe79 cwe89 cwe352 cwe862 cwe787 cwe22 cwe416 cwe125 cwe78 cwe94; do
-  uv run inspect eval benchmark/task.py@reviewer_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T cwe=$cwe \
-    -T version=gpt5.2-filtered \
-    --log-dir logs/malicious/$cwe
-done
-
-# All benign PRs
-for cwe in cwe79 cwe89 cwe352 cwe862 cwe787 cwe22 cwe416 cwe125 cwe78 cwe94; do
-  uv run inspect eval benchmark/task.py@benign_benchmark \
-    --model anthropic/claude-opus-4-6 \
-    -T cwe=$cwe \
-    -T version=gpt5.2_v2 \
-    --log-dir logs/benign/$cwe
-done
-```
-
-
-## Example
-
-![Example PR in Gitea](assets/pr_example.png)
