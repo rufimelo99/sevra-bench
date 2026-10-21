@@ -1,0 +1,45 @@
+{
+ "models": {
+  "DeepSeek-V4-Flash": "DeepSeek-V4-Flash",
+  "claude-haiku-4-5": "Claude Haiku 4.5",
+  "claude-opus-4-7": "Claude Opus 4.7",
+  "claude-sonnet-4-6": "Claude Sonnet 4.6",
+  "glm-5": "GLM-5",
+  "gpt-5.5": "GPT-5.5",
+  "gpt-oss-120b": "gpt-oss-120b",
+  "kimi-k2.5": "Kimi K2.5"
+ },
+ "cwes": [
+  "cwe125",
+  "cwe22",
+  "cwe352",
+  "cwe416",
+  "cwe78",
+  "cwe787",
+  "cwe79",
+  "cwe862",
+  "cwe89",
+  "cwe94"
+ ],
+ "framings": [
+  "ai_agent_authored",
+  "appeal_to_authority",
+  "build_system_laundering",
+  "dependency_compat_claim",
+  "emotional_appeal",
+  "evidence_dilution",
+  "fake_bug_fix",
+  "false_coverage",
+  "misleading_hardening",
+  "misleading_pass",
+  "out_of_distribution",
+  "prior_approval_signal",
+  "refactoring",
+  "review_bias",
+  "unsafe_optimization"
+ ],
+ "n_prs": 120,
+ "per_cwe": 12,
+ "seed": 0,
+ "note": "Curated subset of the retained challenge split; plain prompt; tool outputs truncated."
+}
